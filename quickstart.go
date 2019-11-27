@@ -98,7 +98,7 @@ func getTemplate(srv *drive.Service, parentID string) (string, error) {
 	return r.Files[0].Id, nil
 }
 
-func getPIRFolderID(srv *drive.Service) (string, error) {
+func getPirFolderID(srv *drive.Service) (string, error) {
 	name := "Post Incident Review"
 	driveID := "0ALBeAJlc9jfJUk9PVA"
 	r, err := srv.
@@ -127,6 +127,71 @@ func getPIRFolderID(srv *drive.Service) (string, error) {
 	return r.Files[0].Id, nil
 }
 
+func getOrCreateTeamFolderID(srv *drive.Service, PIRID, teamName string) (string, error) {
+	driveID := "0ALBeAJlc9jfJUk9PVA"
+	r, err := srv.
+		Files.
+		List().
+		IncludeItemsFromAllDrives(true).
+		SupportsAllDrives(true).
+		DriveId(driveID).
+		Corpora("drive").
+		Q(fmt.Sprintf(`
+			mimeType = 'application/vnd.google-apps.folder' and
+			name = '%s' and
+			'%s' in parents
+		`, teamName, PIRID)).
+		Fields("files(id)").
+		Do()
+	if err != nil {
+		return "", err
+	}
+	if len(r.Files) == 0 {
+		f := drive.File{}
+		f.MimeType = "application/vnd.google-apps.folder"
+		f.Name = teamName
+		f.DriveId = driveID
+		f.Parents = []string{PIRID}
+		r, err := srv.
+			Files.
+			Create(&f).
+			SupportsAllDrives(true).
+			Fields("id").
+			Do()
+		if err != nil {
+			return "", err
+		}
+		return r.Id, nil
+	}
+	if len(r.Files) > 1 {
+		return "", fmt.Errorf(`The folder %s is present in the drive more than once`, teamName)
+	}
+	return r.Files[0].Id, nil
+}
+
+func getOrCreateTemplateInTeamID(srv *drive.Service, teamID, baseTemplateID string) (string, error) {
+	driveID := "0ALBeAJlc9jfJUk9PVA"
+	templateInTeamID, err := getTemplate(srv, teamID)
+	if err != nil {
+		f := drive.File{}
+		f.MimeType = "application/vnd.google-apps.document"
+		f.Name = "TEMPLATE"
+		f.DriveId = driveID
+		f.Parents = []string{teamID}
+		r, err := srv.
+			Files.
+			Copy(baseTemplateID, &f).
+			SupportsAllDrives(true).
+			Fields("id").
+			Do()
+		if err != nil {
+			return "", err
+		}
+		return r.Id, nil
+	}
+	return templateInTeamID, nil
+}
+
 func main() {
 	b, err := ioutil.ReadFile("credentials.json")
 	if err != nil {
@@ -145,16 +210,29 @@ func main() {
 		log.Fatalf("Unable to retrieve Drive client: %v\n", err)
 	}
 
-	fID, err := getPIRFolderID(srv)
+	fPirID, err := getPirFolderID(srv)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	tID, err := getTemplate(srv, fID)
+	baseTemplateID, err := getTemplate(srv, fPirID)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fmt.Println(tID)
+	fmt.Println(baseTemplateID, "template base")
+
+	teamName := "Team test squad 5"
+	teamID, err := getOrCreateTeamFolderID(srv, fPirID, teamName)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	fmt.Println(teamID, "team")
+
+	templateInTeamID, err := getOrCreateTemplateInTeamID(srv, teamID, baseTemplateID)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	fmt.Println(templateInTeamID, "template in team")
 }
 
 /*
@@ -163,21 +241,4 @@ Notes:
 -- This is the address of our shared drive
 {"id":"0ALBeAJlc9jfJUk9PVA","name":"Shithappens"}
 
--- This is the address of the main folder
-{"id":"1sSr_A9oe2cIBkzkPiaxszOGaVvIK3Ivd","name":"Post Incident Review","parents":["0ALBeAJlc9jfJUk9PVA"]}
-
--- In the main folder must be a proto-template. This is the address of the proto-template
-{"id":"1Zpve93M7sKOiLKymJBtW0I5hL8rO9NJC-Bw--LfVaEQ","name":"TEMPLATE","parents":["1me_VEAleCPUR69RWu67eaGRFeLmCCHpc"]}
-
-f := drive.File{}
-f.DriveId = driveID
-f.MimeType = "application/vnd.google-apps.folder"
-f.Name = name
-f.Parents = []string{driveID}
-r, err := srv.Files.Create(&f).Fields("*").Do()
-if err != nil {
-	log.Fatalf("Unable to create getPIRfolder: %v\n", err)
-}
-w, _ := r.MarshalJSON()
-fmt.Println(string(w))
 */
