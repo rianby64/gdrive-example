@@ -69,9 +69,8 @@ func saveToken(path string, token *oauth2.Token) {
 	json.NewEncoder(f).Encode(token)
 }
 
-func getTemplate(srv *drive.Service, parentID string) (string, error) {
+func getDocumentID(srv *drive.Service, parentID, docName string) (string, error) {
 	driveID := "0ALBeAJlc9jfJUk9PVA"
-	name := "TEMPLATE"
 	r, err := srv.
 		Files.
 		List().
@@ -81,19 +80,19 @@ func getTemplate(srv *drive.Service, parentID string) (string, error) {
 		Corpora("drive").
 		Q(fmt.Sprintf(`
 			mimeType = 'application/vnd.google-apps.document' and
-			name = 'TEMPLATE' and
+			name = '%s' and
 			'%s' in parents
-		`, parentID)).
+		`, docName, parentID)).
 		Fields("files(id)").
 		Do()
 	if err != nil {
 		return "", err
 	}
 	if len(r.Files) == 0 {
-		return "", fmt.Errorf(`The file %s is not present in the drive`, name)
+		return "", fmt.Errorf(`The file %s is not present in the drive`, docName)
 	}
 	if len(r.Files) > 1 {
-		return "", fmt.Errorf(`The file %s is present in the drive more than once`, name)
+		return "", fmt.Errorf(`The file %s is present in the drive more than once`, docName)
 	}
 	return r.Files[0].Id, nil
 }
@@ -169,13 +168,13 @@ func getOrCreateTeamFolderID(srv *drive.Service, PIRID, teamName string) (string
 	return r.Files[0].Id, nil
 }
 
-func getOrCreateTemplateInTeamID(srv *drive.Service, teamID, baseTemplateID string) (string, error) {
+func getOrCreateDocumentInTeamID(srv *drive.Service, teamID, baseTemplateID, docName string) (string, error) {
 	driveID := "0ALBeAJlc9jfJUk9PVA"
-	templateInTeamID, err := getTemplate(srv, teamID)
+	templateInTeamID, err := getDocumentID(srv, teamID, docName)
 	if err != nil {
 		f := drive.File{}
 		f.MimeType = "application/vnd.google-apps.document"
-		f.Name = "TEMPLATE"
+		f.Name = docName
 		f.DriveId = driveID
 		f.Parents = []string{teamID}
 		r, err := srv.
@@ -215,7 +214,7 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	baseTemplateID, err := getTemplate(srv, fPirID)
+	baseTemplateID, err := getDocumentID(srv, fPirID, "TEMPLATE")
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -228,11 +227,18 @@ func main() {
 	}
 	fmt.Println(teamID, "team")
 
-	templateInTeamID, err := getOrCreateTemplateInTeamID(srv, teamID, baseTemplateID)
+	templateInTeamID, err := getOrCreateDocumentInTeamID(srv, teamID, baseTemplateID, "TEMPLATE")
 	if err != nil {
 		log.Fatalln(err)
 	}
 	fmt.Println(templateInTeamID, "template in team")
+
+	incidentName := "Incident at Shithappens - Testing Postmortem"
+	postMortemInTeamID, err := getOrCreateDocumentInTeamID(srv, teamID, templateInTeamID, incidentName)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	fmt.Println(postMortemInTeamID, "template in team")
 }
 
 /*
