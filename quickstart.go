@@ -80,9 +80,9 @@ func getDocumentID(srv *drive.Service, parentID, docName string) (string, error)
 		Corpora("drive").
 		Q(fmt.Sprintf(`
 			mimeType = 'application/vnd.google-apps.document' and
-			name = '%s' and
-			'%s' in parents
-		`, docName, parentID)).
+			'%s' in parents and
+			name = '%s'
+		`, parentID, docName)).
 		Fields("files(id)").
 		Do()
 	if err != nil {
@@ -97,10 +97,9 @@ func getDocumentID(srv *drive.Service, parentID, docName string) (string, error)
 	return r.Files[0].Id, nil
 }
 
-func getPirFolderID(srv *drive.Service) (string, error) {
-	name := "Post Incident Review"
+func getFolderList(srv *drive.Service, parentID, folderName string) (*drive.FileList, error) {
 	driveID := "0ALBeAJlc9jfJUk9PVA"
-	r, err := srv.
+	fileList, err := srv.
 		Files.
 		List().
 		IncludeItemsFromAllDrives(true).
@@ -109,49 +108,42 @@ func getPirFolderID(srv *drive.Service) (string, error) {
 		Corpora("drive").
 		Q(fmt.Sprintf(`
 			mimeType = 'application/vnd.google-apps.folder' and
-			name = '%s' and
-			'%s' in parents
-		`, name, driveID)).
+			'%s' in parents and
+			name = '%s'
+		`, parentID, folderName)).
 		Fields("files(id)").
 		Do()
 	if err != nil {
+		return nil, err
+	}
+	return fileList, nil
+}
+
+func getFolderID(srv *drive.Service, parentID, folderName string) (string, error) {
+	fileList, err := getFolderList(srv, parentID, folderName)
+	if err != nil {
 		return "", err
 	}
-	if len(r.Files) == 0 {
-		return "", fmt.Errorf(`The folder %s is not present in the drive`, name)
+	if len(fileList.Files) == 0 {
+		return "", fmt.Errorf(`The folder %s is not present in the drive`, folderName)
 	}
-	if len(r.Files) > 1 {
-		return "", fmt.Errorf(`The folder %s is present in the drive more than once`, name)
+	if len(fileList.Files) > 1 {
+		return "", fmt.Errorf(`The folder %s is present in the drive more than once`, folderName)
 	}
-	return r.Files[0].Id, nil
+	return fileList.Files[0].Id, nil
 }
 
 func getOrCreateTeamFolderID(srv *drive.Service, PIRID, teamName string) (string, error) {
-	driveID := "0ALBeAJlc9jfJUk9PVA"
-	r, err := srv.
-		Files.
-		List().
-		IncludeItemsFromAllDrives(true).
-		SupportsAllDrives(true).
-		DriveId(driveID).
-		Corpora("drive").
-		Q(fmt.Sprintf(`
-			mimeType = 'application/vnd.google-apps.folder' and
-			name = '%s' and
-			'%s' in parents
-		`, teamName, PIRID)).
-		Fields("files(id)").
-		Do()
+	fileList, err := getFolderList(srv, PIRID, teamName)
 	if err != nil {
 		return "", err
 	}
-	if len(r.Files) == 0 {
+	if len(fileList.Files) == 0 {
 		f := drive.File{}
 		f.MimeType = "application/vnd.google-apps.folder"
 		f.Name = teamName
-		f.DriveId = driveID
 		f.Parents = []string{PIRID}
-		r, err := srv.
+		createdFile, err := srv.
 			Files.
 			Create(&f).
 			SupportsAllDrives(true).
@@ -160,22 +152,20 @@ func getOrCreateTeamFolderID(srv *drive.Service, PIRID, teamName string) (string
 		if err != nil {
 			return "", err
 		}
-		return r.Id, nil
+		return createdFile.Id, nil
 	}
-	if len(r.Files) > 1 {
+	if len(fileList.Files) > 1 {
 		return "", fmt.Errorf(`The folder %s is present in the drive more than once`, teamName)
 	}
-	return r.Files[0].Id, nil
+	return fileList.Files[0].Id, nil
 }
 
 func getOrCreateDocumentInTeamID(srv *drive.Service, teamID, baseTemplateID, docName string) (string, error) {
-	driveID := "0ALBeAJlc9jfJUk9PVA"
 	templateInTeamID, err := getDocumentID(srv, teamID, docName)
 	if err != nil {
 		f := drive.File{}
 		f.MimeType = "application/vnd.google-apps.document"
 		f.Name = docName
-		f.DriveId = driveID
 		f.Parents = []string{teamID}
 		r, err := srv.
 			Files.
@@ -209,7 +199,7 @@ func main() {
 		log.Fatalf("Unable to retrieve Drive client: %v\n", err)
 	}
 
-	fPirID, err := getPirFolderID(srv)
+	fPirID, err := getFolderID(srv, "0ALBeAJlc9jfJUk9PVA", "Post Incident Review")
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -238,7 +228,7 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fmt.Println(postMortemInTeamID, "template in team")
+	fmt.Println(postMortemInTeamID, "post-mortem review")
 }
 
 /*
