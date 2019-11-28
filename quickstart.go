@@ -69,35 +69,7 @@ func saveToken(path string, token *oauth2.Token) {
 	json.NewEncoder(f).Encode(token)
 }
 
-func getDocumentID(srv *drive.Service, parentID, docName string) (string, error) {
-	driveID := "0ALBeAJlc9jfJUk9PVA"
-	r, err := srv.
-		Files.
-		List().
-		IncludeItemsFromAllDrives(true).
-		SupportsAllDrives(true).
-		DriveId(driveID).
-		Corpora("drive").
-		Q(fmt.Sprintf(`
-			mimeType = 'application/vnd.google-apps.document' and
-			'%s' in parents and
-			name = '%s'
-		`, parentID, docName)).
-		Fields("files(id)").
-		Do()
-	if err != nil {
-		return "", err
-	}
-	if len(r.Files) == 0 {
-		return "", fmt.Errorf(`The file %s is not present in the drive`, docName)
-	}
-	if len(r.Files) > 1 {
-		return "", fmt.Errorf(`The file %s is present in the drive more than once`, docName)
-	}
-	return r.Files[0].Id, nil
-}
-
-func getFolderList(srv *drive.Service, parentID, folderName string) (*drive.FileList, error) {
+func getFileList(srv *drive.Service, mimeType, parentID, docName string) (*drive.FileList, error) {
 	driveID := "0ALBeAJlc9jfJUk9PVA"
 	fileList, err := srv.
 		Files.
@@ -107,12 +79,35 @@ func getFolderList(srv *drive.Service, parentID, folderName string) (*drive.File
 		DriveId(driveID).
 		Corpora("drive").
 		Q(fmt.Sprintf(`
-			mimeType = 'application/vnd.google-apps.folder' and
+		    trashed = false and
+			mimeType = '%s' and
 			'%s' in parents and
 			name = '%s'
-		`, parentID, folderName)).
-		Fields("files(id)").
+		`, mimeType, parentID, docName)).
+		Fields("files(id, webViewLink)").
 		Do()
+	if err != nil {
+		return nil, err
+	}
+	return fileList, nil
+}
+
+func getDocumentID(srv *drive.Service, parentID, docName string) (string, error) {
+	fileList, err := getFileList(srv, "application/vnd.google-apps.document", parentID, docName)
+	if err != nil {
+		return "", err
+	}
+	if len(fileList.Files) == 0 {
+		return "", fmt.Errorf(`The file %s is not present in the drive`, docName)
+	}
+	if len(fileList.Files) > 1 {
+		return "", fmt.Errorf(`The file %s is present in the drive more than once`, docName)
+	}
+	return fileList.Files[0].Id, nil
+}
+
+func getFolderList(srv *drive.Service, parentID, folderName string) (*drive.FileList, error) {
+	fileList, err := getFileList(srv, "application/vnd.google-apps.folder", parentID, folderName)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +205,7 @@ func main() {
 	}
 	fmt.Println(baseTemplateID, "template base")
 
-	teamName := "Team test squad 5"
+	teamName := "Team test squad 8"
 	teamID, err := getOrCreateTeamFolderID(srv, fPirID, teamName)
 	if err != nil {
 		log.Fatalln(err)
@@ -223,7 +218,7 @@ func main() {
 	}
 	fmt.Println(templateInTeamID, "template in team")
 
-	incidentName := "Incident at Shithappens - Testing Postmortem"
+	incidentName := "Incident at Shithappens - Testing Postmortem 3"
 	postMortemInTeamID, err := getOrCreateDocumentInTeamID(srv, teamID, templateInTeamID, incidentName)
 	if err != nil {
 		log.Fatalln(err)
