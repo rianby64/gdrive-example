@@ -106,6 +106,19 @@ func getDocumentID(srv *drive.Service, parentID, docName string) (string, error)
 	return fileList.Files[0].Id, nil
 }
 
+func getDocumentLinkByID(srv *drive.Service, docID string) (string, error) {
+	file, err := srv.
+		Files.
+		Get(docID).
+		SupportsAllDrives(true).
+		Fields("webViewLink").
+		Do()
+	if err != nil {
+		return "", err
+	}
+	return file.WebViewLink, nil
+}
+
 func getFolderList(srv *drive.Service, parentID, folderName string) (*drive.FileList, error) {
 	fileList, err := getFileList(srv, "application/vnd.google-apps.folder", parentID, folderName)
 	if err != nil {
@@ -223,7 +236,11 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fmt.Println(postMortemInTeamID, "post-mortem review")
+	link, err := getDocumentLinkByID(srv, postMortemInTeamID)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	fmt.Println(link, "post-mortem link")
 }
 
 /*
