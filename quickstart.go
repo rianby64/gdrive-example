@@ -12,7 +12,10 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/option"
 )
+
+var driveID = ""
 
 // Retrieve a token, saves the token, then returns the generated client.
 func getClient(config *oauth2.Config) *http.Client {
@@ -69,8 +72,19 @@ func saveToken(path string, token *oauth2.Token) {
 	json.NewEncoder(f).Encode(token)
 }
 
+func getDriveList(srv *drive.Service) (*drive.DriveList, error) {
+	driveList, err := srv.
+		Drives.
+		List().
+		Fields("*").
+		Do()
+	if err != nil {
+		return nil, err
+	}
+	return driveList, nil
+}
+
 func getFileList(srv *drive.Service, mimeType, parentID, docName string) (*drive.FileList, error) {
-	driveID := "0ALBeAJlc9jfJUk9PVA"
 	fileList, err := srv.
 		Files.
 		List().
@@ -179,7 +193,7 @@ func getOrCreateDocumentInTeamID(srv *drive.Service, teamID, baseTemplateID, doc
 			Files.
 			Copy(baseTemplateID, &f).
 			SupportsAllDrives(true).
-			Fields("id").
+			Fields("id, webViewLink").
 			Do()
 		if err != nil {
 			return "", err
@@ -189,64 +203,173 @@ func getOrCreateDocumentInTeamID(srv *drive.Service, teamID, baseTemplateID, doc
 	return templateInTeamID, nil
 }
 
-func main() {
-	b, err := ioutil.ReadFile("credentials.json")
+func authByAUTH0() (*drive.Service, error) {
+	b, err := ioutil.ReadFile("oauth.json")
 	if err != nil {
 		log.Fatalf("Unable to read client secret file: %v\n", err)
 	}
 
 	// If modifying these scopes, delete your previously saved token.json.
-	config, err := google.ConfigFromJSON(b, drive.DriveMetadataReadonlyScope, drive.DriveScope, drive.DriveFileScope)
+	config, err := google.ConfigFromJSON(b,
+		drive.DriveAppdataScope,
+		drive.DriveMetadataScope,
+		drive.DriveScope,
+		drive.DriveFileScope)
 	if err != nil {
-		log.Fatalf("Unable to parse client secret file to config: %v\n", err)
+		return nil, fmt.Errorf("Unable to parse client secret file to config: %v", err)
 	}
 	client := getClient(config)
 
 	srv, err := drive.New(client)
 	if err != nil {
-		log.Fatalf("Unable to retrieve Drive client: %v\n", err)
+		return nil, fmt.Errorf("Unable to retrieve Drive client: %v", err)
 	}
 
-	fPirID, err := getFolderID(srv, "0ALBeAJlc9jfJUk9PVA", "Post Incident Review")
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	baseTemplateID, err := getDocumentID(srv, fPirID, "TEMPLATE")
-	if err != nil {
-		log.Fatalln(err)
-	}
-	fmt.Println(baseTemplateID, "template base")
-
-	teamName := "Team test squad 8"
-	teamID, err := getOrCreateTeamFolderID(srv, fPirID, teamName)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	fmt.Println(teamID, "team")
-
-	templateInTeamID, err := getOrCreateDocumentInTeamID(srv, teamID, baseTemplateID, "TEMPLATE")
-	if err != nil {
-		log.Fatalln(err)
-	}
-	fmt.Println(templateInTeamID, "template in team")
-
-	incidentName := "Incident at Shithappens - Testing Postmortem 3"
-	postMortemInTeamID, err := getOrCreateDocumentInTeamID(srv, teamID, templateInTeamID, incidentName)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	link, err := getDocumentLinkByID(srv, postMortemInTeamID)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	fmt.Println(link, "post-mortem link")
+	return srv, nil
 }
 
-/*
-Notes:
+func authByToken() (*drive.Service, error) {
+	ctx := context.Background()
+	token, err := tokenFromFile("token.json")
+	if err != nil {
+		return nil, fmt.Errorf("Unable to retrieve Token file: %v", err)
+	}
+	tokenSource := oauth2.StaticTokenSource(token)
 
--- This is the address of our shared drive
-{"id":"0ALBeAJlc9jfJUk9PVA","name":"Shithappens"}
+	srv, err := drive.NewService(ctx,
+		option.WithTokenSource(tokenSource),
+		option.WithScopes(drive.DriveAppdataScope,
+			drive.DriveMetadataScope,
+			drive.DriveScope,
+			drive.DriveFileScope,
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to retrieve Drive client: %v", err)
+	}
 
-*/
+	return srv, nil
+}
+
+func authByCredentials1() (*drive.Service, error) {
+	ctx := context.Background()
+	b, err := ioutil.ReadFile("credentials.json")
+	if err != nil {
+		log.Fatalf("Unable to read client secret file: %v\n", err)
+	}
+	creds, err := google.JWTConfigFromJSON(b,
+		drive.DriveAppdataScope,
+		drive.DriveMetadataScope,
+		drive.DriveScope,
+		drive.DriveFileScope)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to retreive Credentials: %v", err)
+	}
+
+	client := creds.Client(ctx)
+
+	srv, err := drive.NewService(ctx,
+		option.WithHTTPClient(client),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to retrieve Drive client: %v", err)
+	}
+	return srv, nil
+}
+
+func authByCredentials2() (*drive.Service, error) {
+	ctx := context.Background()
+	b, err := ioutil.ReadFile("credentials.json")
+	if err != nil {
+		log.Fatalf("Unable to read client secret file: %v\n", err)
+	}
+	creds, err := google.CredentialsFromJSON(ctx, b,
+		drive.DriveAppdataScope,
+		drive.DriveMetadataScope,
+		drive.DriveScope,
+		drive.DriveFileScope)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to retreive Credentials: %v", err)
+	}
+
+	srv, err := drive.NewService(ctx,
+		option.WithCredentials(creds),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to retrieve Drive client: %v", err)
+	}
+	return srv, nil
+}
+
+func authByCredentials3() (*drive.Service, error) {
+	ctx := context.Background()
+	srv, err := drive.NewService(ctx,
+		option.WithCredentialsFile("credentials.json"),
+		option.WithScopes(drive.DriveAppdataScope,
+			drive.DriveMetadataScope,
+			drive.DriveScope,
+			drive.DriveFileScope),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to retrieve Drive client: %v", err)
+	}
+	return srv, nil
+}
+
+func main() {
+	srv, err := authByCredentials3()
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	about, err := srv.About.Get().Fields("*").Do()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	aboutJSON, _ := about.MarshalJSON()
+	fmt.Println(string(aboutJSON))
+
+	driveList, err := getDriveList(srv)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	drivesJSON, _ := driveList.MarshalJSON()
+	fmt.Println(string(drivesJSON))
+
+	/*
+		fPirID, err := getFolderID(srv, "", "Post Incident Review")
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		baseTemplateID, err := getDocumentID(srv, fPirID, "TEMPLATE")
+		if err != nil {
+			log.Fatalln(err)
+		}
+		fmt.Println(baseTemplateID, "template base")
+
+		teamName := "Team test squad 8"
+		teamID, err := getOrCreateTeamFolderID(srv, fPirID, teamName)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		fmt.Println(teamID, "team")
+
+		templateInTeamID, err := getOrCreateDocumentInTeamID(srv, teamID, baseTemplateID, "TEMPLATE")
+		if err != nil {
+			log.Fatalln(err)
+		}
+		fmt.Println(templateInTeamID, "template in team")
+
+		incidentName := "Incident at Shithappens - Testing Postmortem 3"
+		postMortemInTeamID, err := getOrCreateDocumentInTeamID(srv, teamID, templateInTeamID, incidentName)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		link, err := getDocumentLinkByID(srv, postMortemInTeamID)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		fmt.Println(link, "post-mortem link")
+	*/
+}
