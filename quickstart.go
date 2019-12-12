@@ -317,7 +317,7 @@ func authByCredentials3() (*drive.Service, error) {
 }
 
 func main() {
-	srv, err := authByCredentials3()
+	srv, err := authByCredentials1()
 	if err != nil {
 		log.Fatalln(err)
 	}
