@@ -212,9 +212,9 @@ func authByAUTH0() (*drive.Service, error) {
 	// If modifying these scopes, delete your previously saved token.json.
 	config, err := google.ConfigFromJSON(b,
 		drive.DriveAppdataScope,
-		drive.DriveMetadataScope,
 		drive.DriveScope,
-		drive.DriveFileScope)
+		drive.DriveFileScope,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to parse client secret file to config: %v", err)
 	}
@@ -238,8 +238,8 @@ func authByToken() (*drive.Service, error) {
 
 	srv, err := drive.NewService(ctx,
 		option.WithTokenSource(tokenSource),
-		option.WithScopes(drive.DriveAppdataScope,
-			drive.DriveMetadataScope,
+		option.WithScopes(
+			drive.DriveAppdataScope,
 			drive.DriveScope,
 			drive.DriveFileScope,
 		),
@@ -259,9 +259,9 @@ func authByCredentials1() (*drive.Service, error) {
 	}
 	creds, err := google.JWTConfigFromJSON(b,
 		drive.DriveAppdataScope,
-		drive.DriveMetadataScope,
 		drive.DriveScope,
-		drive.DriveFileScope)
+		drive.DriveFileScope,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to retreive Credentials: %v", err)
 	}
@@ -285,9 +285,9 @@ func authByCredentials2() (*drive.Service, error) {
 	}
 	creds, err := google.CredentialsFromJSON(ctx, b,
 		drive.DriveAppdataScope,
-		drive.DriveMetadataScope,
 		drive.DriveScope,
-		drive.DriveFileScope)
+		drive.DriveFileScope,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to retreive Credentials: %v", err)
 	}
@@ -305,10 +305,11 @@ func authByCredentials3() (*drive.Service, error) {
 	ctx := context.Background()
 	srv, err := drive.NewService(ctx,
 		option.WithCredentialsFile("credentials.json"),
-		option.WithScopes(drive.DriveAppdataScope,
-			drive.DriveMetadataScope,
+		option.WithScopes(
+			drive.DriveAppdataScope,
 			drive.DriveScope,
-			drive.DriveFileScope),
+			drive.DriveFileScope,
+		),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to retrieve Drive client: %v", err)
@@ -322,19 +323,34 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	about, err := srv.About.Get().Fields("*").Do()
-	if err != nil {
-		log.Fatalln(err)
-	}
-	aboutJSON, _ := about.MarshalJSON()
-	fmt.Println(string(aboutJSON))
+	/*
+		about, err := srv.About.Get().Fields("*").Do()
+		if err != nil {
+			log.Fatalln(err)
+		}
+		aboutJSON, _ := about.MarshalJSON()
+		fmt.Println(string(aboutJSON))
 
-	driveList, err := getDriveList(srv)
+		driveList, err := getDriveList(srv)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		drivesJSON, _ := driveList.MarshalJSON()
+		fmt.Println(string(drivesJSON))
+	*/
+	files, err := srv.
+		Files.
+		List().
+		IncludeItemsFromAllDrives(true).
+		SupportsAllDrives(true).
+		Fields("*").
+		Do()
+
 	if err != nil {
 		log.Fatalln(err)
 	}
-	drivesJSON, _ := driveList.MarshalJSON()
-	fmt.Println(string(drivesJSON))
+	filesJSON, _ := files.MarshalJSON()
+	fmt.Println(string(filesJSON))
 
 	/*
 		fPirID, err := getFolderID(srv, "", "Post Incident Review")
